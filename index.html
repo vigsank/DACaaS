@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>
+    window.onload = function () {
+      const source = new EventSource("/start-build");
+      alert("Do not close this window. Else, even if the build is successful, you will not be able to download the archive.");
+      source.onmessage = function (event) {
+        const dataToBind = JSON.parse(event.data);
+        const consoleInnerDiv = document.getElementById("console-inner");
+        if (dataToBind.type === "close" || dataToBind.type === "error") {
+          document.getElementById("console-processing-lbl").style.display = "none";
+        }
+        if (dataToBind.type === "close" && window.hasErrorReached) {
+          dataToBind.result = "Failure";
+          source.close && source.close();
+        } else if (dataToBind.type === "close" && !window.hasErrorReached) {
+          document.getElementById("aDownload").style.visibility = "visible";
+        }
+        window.hasErrorReached = dataToBind.type === "error";
+
+        consoleInnerDiv.innerText += dataToBind.result;
+        consoleInnerDiv.scrollIntoView(false);
+
+      };
+      source.onerror = function (event) {
+        source.close && source.close();
+      }
+    };
+  </script>
+  <title>DACaaS</title>
+</head>
+
+<body>
+  <noscript>You need to enable JavaScript to run this app.</noscript>
+  <div style="justify-content: space-between;display: flex;width: 99%;margin:4px">
+    <div id="parent">Console:</div>
+    <a id="aDownload" href="/download" style="visibility: hidden;">Download Archive</a>
+  </div>
+  <div id="console"
+    style="border: 1px solid rgb(11, 95, 168); background-color: rgb(10, 9, 9); color: rgb(230, 209, 209); overflow-y: scroll; height: 95vh;">
+    <div id="console-inner" style="margin: 4px;">
+    </div>
+    <label id="console-processing-lbl">Processing...</label>
+  </div>
+
+</html>
