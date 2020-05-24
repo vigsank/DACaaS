@@ -1,5 +1,6 @@
 require("dotenv").config();
 const exec = require("child_process").exec;
+const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const crypto = require("crypto");
 const csrf = require('csurf');
@@ -18,10 +19,10 @@ const app = express();
 const PARENT_FOLDER_FOR_LOCAL_REPO = process.env.BUILD_DIRECTORY_PATH || "Builds";
 // These are really not errors but unsure why child process is considering these as errors. So ignoring those which are ideally not.
 const IGNORABLE_ERRORS = [
-  "Java HotSpot(TM) 64-Bit Server VM warning", 
-  "Cloning into", 
-  `Already on`, 
-  "Total", 
+  "Java HotSpot(TM) 64-Bit Server VM warning",
+  "Cloning into",
+  `Already on`,
+  "Total",
   "Switched to a new branch",
 ];
 
@@ -65,6 +66,9 @@ app.use(expressLogger);
 // add Request ID
 app.use(expressRequestId());
 
+// add cookie-parser
+app.use(cookieParser());
+
 getIsIgnorableError = (errMsg) => {
   // check if the error msg is part of ignorable list.
   return IGNORABLE_ERRORS.some((ignorableErr) => errMsg.indexOf(ignorableErr) > -1);
@@ -99,20 +103,20 @@ getDockerCommands = (tempDirName, req) => {
     tempDirName
   )} && docker build -t ${dockerImageName} -f ${
     process.env.DOCKER_FILE_PATH ? process.env.DOCKER_FILE_PATH : "./DockerFile"
-  } ${
+    } ${
     process.env.ACTUAL_PATH_TO_DOCKERIZE
       ? `${process.env.ACTUAL_PATH_TO_DOCKERIZE}`
       : `./`
-  } && docker save -o ./${dockerImageName}.tar ${dockerImageName} ${
+    } && docker save -o ./${dockerImageName}.tar ${dockerImageName} ${
     process.env.DELETE_DOCKER_IMAGE_POST_COMPLETE === "false"
       ? ``
       : `&& docker image rm ${dockerImageName}`
-  }`;
+    }`;
 }
 
 getRandomNumber = (req) => {
   const randomNumber = crypto.randomBytes(4).toString("hex");
-  addLog(req, "info",`Generated Random Number is : ${randomNumber}.`);
+  addLog(req, "info", `Generated Random Number is : ${randomNumber}.`);
   return randomNumber;
 }
 
@@ -149,19 +153,23 @@ writeResponse = (req, res, type, resToBeWritten, logMsg) => {
 
 addLog = (req, type, logMsg) => {
   switch (type) {
-      case "info":
-        logger.info(`[${req.session["requestId"]}] ${logMsg}`);
-        break;
-      case "debug":
-        logger.debug(`[${req.session["requestId"]}] ${logMsg}`);
-        break;
-      case "error":
-        logger.error(`[${req.session["requestId"]}] ${logMsg}`);
-        break;
-      default:
-        logger.info(`[${req.session["requestId"]}] ${logMsg}`);
-        break;
+    case "info":
+      logger.info(`[${req.session["requestId"]}] ${logMsg}`);
+      break;
+    case "debug":
+      logger.debug(`[${req.session["requestId"]}] ${logMsg}`);
+      break;
+    case "error":
+      logger.error(`[${req.session["requestId"]}] ${logMsg}`);
+      break;
+    default:
+      logger.info(`[${req.session["requestId"]}] ${logMsg}`);
+      break;
   }
+}
+
+isValidCSRF = (csrfFromCookie, req) => {
+  return csrfFromCookie === req.session["csrf"];
 }
 
 execChildProcess = (command, isLastCommand, req, res) => {
@@ -202,7 +210,7 @@ execChildProcess = (command, isLastCommand, req, res) => {
      */
     child.on("close", (close) => {
       if (isLastCommand && !closedDueToError) {
-        addLog(req, "info","Last Command done.!!");
+        addLog(req, "info", "Last Command done.!!");
         close = { type: "close", result: "SuccessFully Created a Docker archive !! " };
         res.write("data:" + `${JSON.stringify(close)}\n\n`);
         res.end();
@@ -219,7 +227,9 @@ execChildProcess = (command, isLastCommand, req, res) => {
 }
 
 app.get("/", (req, res) => {
-  res.cookie('X-CSRF-TOKEN', req.csrfToken());
+  const csrfToken = req.csrfToken();
+  res.cookie('X-CSRF-TOKEN', csrfToken);
+  req.session["csrf"] = csrfToken;
   res.status(200).set({
     "content-type": "application/json",
   }).send({
@@ -231,9 +241,11 @@ app.get("/", (req, res) => {
 
 app.get("/branch/:branchName", async (req, res) => {
   const branchName = req.params.branchName;
+  const csrfToken = req.csrfToken();
   req.session["branchName"] = branchName;
   req.session["requestId"] = req.id;
-  res.cookie('X-CSRF-TOKEN', req.csrfToken());
+  res.cookie('X-CSRF-TOKEN', csrfToken);
+  req.session["csrf"] = csrfToken;
   res.writeHead(200, { "Content-Type": "text/html" });
   res.write(fs.readFileSync("./index.html"));
   res.end();
@@ -242,7 +254,15 @@ app.get("/branch/:branchName", async (req, res) => {
 app.get("/start-build", async (req, res) => {
   const branchName = req.session["branchName"];
   addLog(req, "info", `Branch to be processed : ${branchName}`);
-  //TODO: Check for CSRF token is valid.
+  const csrfInCookie = req.cookies["X-CSRF-TOKEN"];
+  addLog(req, "debug", `CSRF Token in Cookie : ${csrfInCookie}`);
+  if (!isValidCSRF(csrfInCookie, req)) {
+    addLog(req, "debug", `Invalid CSRF.`);
+    res.status(403).send({
+      status: "forbidden"
+    });
+    return;
+  }
   res.status(200).set({
     connection: "keep-alive",
     "cache-control": "no-cache",
@@ -279,7 +299,15 @@ app.get("/start-build", async (req, res) => {
 
 app.get("/test/branch/:branchname", (req, res) => {
   const branchName = req.params.branchname;
-  res.cookie('X-CSRF-TOKEN', req.csrfToken());
+  const csrfInCookie = req.cookies["X-CSRF-TOKEN"];
+  addLog(req, "debug", `CSRF Token in Cookie : ${csrfInCookie}`);
+  if (!isValidCSRF(csrfInCookie, req)) {
+    addLog(req, "debug", `Invalid CSRF.`);
+    res.status(403).send({
+      status: "forbidden"
+    });
+    return;
+  }
   res.status(200).set({
     connection: "keep-alive",
     "cache-control": "no-cache",
@@ -300,12 +328,28 @@ app.get("/test/branch/:branchname", (req, res) => {
 });
 
 app.get("/download/:tempDirectoryName", (req, res) => {
-  //TODO: Check for CSRF token is valid.
+  const csrfInCookie = req.cookies["X-CSRF-TOKEN"];
+  addLog(req, "debug", `CSRF Token in Cookie : ${csrfInCookie}`);
+  if (!isValidCSRF(csrfInCookie, req)) {
+    addLog(req, "debug", `Invalid CSRF.`);
+    res.status(403).send({
+      status: "forbidden"
+    });
+    return;
+  }
   downloadArchive(req, res, false);
 });
 
 app.get("/download", (req, res) => {
-  //TODO: Check for CSRF token is valid.
+  const csrfInCookie = req.cookies["X-CSRF-TOKEN"];
+  addLog(req, "debug", `CSRF Token in Cookie : ${csrfInCookie}`);
+  if (!isValidCSRF(csrfInCookie, req)) {
+    addLog(req, "debug", `Invalid CSRF.`);
+    res.status(403).send({
+      status: "forbidden"
+    });
+    return;
+  }
   downloadArchive(req, res, true);
 });
 
