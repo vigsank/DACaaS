@@ -2,7 +2,7 @@
 Create Docker Image for **any** project (built using **any** language/framework) based on given Branch Name.
 (Ex: http://localhost:1234/branch/master --  Here `master` is the branch name.)
 
-This is a fully customizable simple Express server that can receive a branch name as a URL Param (stops if ran without a branchName.) and then start the commands that are configured to create a docker image and in turn create a **Tar** archive.
+This is a highly secure and fully customizable simple Express server that can receive a branch name as a URL Param (stops if ran without a branchName.) and then start the commands that are configured to create a docker image and in turn create a **Tar** archive.
 At the end, the archive file will be available for download.
 
 The status of the commands that are being executed will be shown in the browser window (like a console.) via *event-stream*.
@@ -96,3 +96,9 @@ PASSPHRASE=
 ## Logging Framework Used : [Pino](https://getpino.io/#/).
   - Set LOG_LEVEL env variable with supported values as per Pino docs to see different log levels.
   - Currently 'info' , 'debug' and 'error' are the levels used in implementation.
+
+## Frameworks Used for enhanced security :
+  - [helmet](https://helmetjs.github.io/)
+  - [csurf](https://github.com/expressjs/csurf)
+  - [cors](https://github.com/expressjs/cors#readme)
+  - [express-rate-limit](https://github.com/nfriedly/express-rate-limit)
