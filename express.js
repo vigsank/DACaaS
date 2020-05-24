@@ -2,12 +2,14 @@ require("dotenv").config();
 const exec = require("child_process").exec;
 const cors = require("cors");
 const crypto = require("crypto");
+const csrf = require('csurf');
 const express = require("express");
-const expressRequestId = require('express-request-id');
 const expressPino = require('express-pino-logger');
 const rateLimit = require("express-rate-limit");
+const expressRequestId = require('express-request-id');
 const session = require("express-session");
 const fs = require("fs");
+const helmet = require('helmet');
 const https = require("https");
 const path = require("path");
 const pino = require('pino');
@@ -22,6 +24,22 @@ const IGNORABLE_ERRORS = [
   "Total", 
   "Switched to a new branch",
 ];
+
+// add helmet middleware
+app.use(helmet());
+
+// initialize session
+app.use(
+  session({
+    //secret to sign the session ID cookie
+    secret: process.env.SESSION_SECRET,
+    resave: true,
+    saveUninitialized: true,
+  })
+);
+
+// add CSRF to requests.
+app.use(csrf());
 
 //  apply rate limit to all requests
 const limiter = rateLimit({
@@ -43,16 +61,6 @@ app.use(express.static(path.join(__dirname, "public")));
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 const expressLogger = expressPino({ logger });
 app.use(expressLogger);
-
-// initialize session
-app.use(
-  session({
-    //secret to sign the session ID cookie
-    secret: process.env.SESSION_SECRET,
-    resave: true,
-    saveUninitialized: true,
-  })
-);
 
 // add Request ID
 app.use(expressRequestId());
@@ -211,6 +219,7 @@ execChildProcess = (command, isLastCommand, req, res) => {
 }
 
 app.get("/", (req, res) => {
+  res.cookie('X-CSRF-TOKEN', req.csrfToken());
   res.status(200).set({
     "content-type": "application/json",
   }).send({
@@ -224,6 +233,7 @@ app.get("/branch/:branchName", async (req, res) => {
   const branchName = req.params.branchName;
   req.session["branchName"] = branchName;
   req.session["requestId"] = req.id;
+  res.cookie('X-CSRF-TOKEN', req.csrfToken());
   res.writeHead(200, { "Content-Type": "text/html" });
   res.write(fs.readFileSync("./index.html"));
   res.end();
@@ -231,7 +241,8 @@ app.get("/branch/:branchName", async (req, res) => {
 
 app.get("/start-build", async (req, res) => {
   const branchName = req.session["branchName"];
-  addLog(req, "info", `Branch to be processed : ${branchName}`)
+  addLog(req, "info", `Branch to be processed : ${branchName}`);
+  //TODO: Check for CSRF token is valid.
   res.status(200).set({
     connection: "keep-alive",
     "cache-control": "no-cache",
@@ -268,6 +279,7 @@ app.get("/start-build", async (req, res) => {
 
 app.get("/test/branch/:branchname", (req, res) => {
   const branchName = req.params.branchname;
+  res.cookie('X-CSRF-TOKEN', req.csrfToken());
   res.status(200).set({
     connection: "keep-alive",
     "cache-control": "no-cache",
@@ -288,10 +300,12 @@ app.get("/test/branch/:branchname", (req, res) => {
 });
 
 app.get("/download/:tempDirectoryName", (req, res) => {
+  //TODO: Check for CSRF token is valid.
   downloadArchive(req, res, false);
 });
 
 app.get("/download", (req, res) => {
+  //TODO: Check for CSRF token is valid.
   downloadArchive(req, res, true);
 });
 
