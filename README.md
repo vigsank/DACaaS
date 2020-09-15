@@ -1,3 +1,4 @@
+![CodeQL](https://github.com/vigsank/extended-cra-ts/workflows/CodeQL/badge.svg)
 # Docker Archive Creation as a Service (DACaaS)
 Create Docker Image for **any** project (built using **any** language/framework) based on given Branch Name.
 (Ex: http://localhost:1234/branch/master --  Here `master` is the branch name.)
